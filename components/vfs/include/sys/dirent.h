@@ -43,6 +43,7 @@ struct dirent {
 #define DT_REG      1
 #define DT_DIR      2
     char d_name[256];   /*!< zero-terminated file name */
+    uint32_t d_fsize;
 };
 
 DIR* opendir(const char* name);

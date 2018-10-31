@@ -450,7 +450,7 @@ sys_init(void)
     // Create the pthreads key for the per-thread semaphore storage
     pthread_key_create(&sys_thread_sem_key, sys_thread_sem_free);
 
-    esp_vfs_lwip_sockets_register();
+    //esp_vfs_lwip_sockets_register();
 }
 
 /*-----------------------------------------------------------------------------------*/

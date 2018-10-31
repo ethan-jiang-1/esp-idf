@@ -45,6 +45,8 @@ extern "C" {
 
 struct sched_param {
   int sched_priority;           /* Process execution scheduling priority */
+  cpu_set_t affinityset;
+  int initial_state;
 
 #if defined(_POSIX_SPORADIC_SERVER) || defined(_POSIX_THREAD_SPORADIC_SERVER)
   int sched_ss_low_priority;    /* Low scheduling priority for sporadic */

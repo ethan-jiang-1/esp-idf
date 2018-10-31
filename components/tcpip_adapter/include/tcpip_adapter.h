@@ -104,6 +104,8 @@ typedef enum {
     TCPIP_ADAPTER_IF_STA = 0,     /**< ESP32 station interface */
     TCPIP_ADAPTER_IF_AP,          /**< ESP32 soft-AP interface */
     TCPIP_ADAPTER_IF_ETH,         /**< ESP32 ethernet interface */
+   TCPIP_ADAPTER_IF_SPI_ETH,     /**< ESP32 spi ethernet interface */
+   TCPIP_ADAPTER_IF_TUN,         /**< ESP32 tun interface */
     TCPIP_ADAPTER_IF_MAX
 } tcpip_adapter_if_t;
 
@@ -406,11 +408,9 @@ esp_err_t tcpip_adapter_create_ip6_linklocal(tcpip_adapter_if_t tcpip_if);
  */
 esp_err_t tcpip_adapter_get_ip6_linklocal(tcpip_adapter_if_t tcpip_if, ip6_addr_t *if_ip6);
 
-#if 0
 esp_err_t tcpip_adapter_get_mac(tcpip_adapter_if_t tcpip_if, uint8_t *mac);
 
 esp_err_t tcpip_adapter_set_mac(tcpip_adapter_if_t tcpip_if, uint8_t *mac);
-#endif
 
 /**
  * @brief  Get DHCP server's status
@@ -617,6 +617,8 @@ esp_err_t tcpip_adapter_get_hostname(tcpip_adapter_if_t tcpip_if, const char **h
  *         ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS:parameter error
  */
 esp_err_t tcpip_adapter_get_netif(tcpip_adapter_if_t tcpip_if, void ** netif);
+
+esp_err_t tcpip_adapter_tun_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info);
 
 #ifdef __cplusplus
 }

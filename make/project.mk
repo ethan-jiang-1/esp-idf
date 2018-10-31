@@ -131,7 +131,7 @@ export BUILD_DIR_BASE
 # The project Makefile can override these component dirs, or add extras via EXTRA_COMPONENT_DIRS
 ifndef COMPONENT_DIRS
 EXTRA_COMPONENT_DIRS ?=
-COMPONENT_DIRS := $(PROJECT_PATH)/components $(EXTRA_COMPONENT_DIRS) $(IDF_PATH)/components $(PROJECT_PATH)/main
+COMPONENT_DIRS := $(PROJECT_PATH)/components $(EXTRA_COMPONENT_DIRS) $(IDF_PATH)/components $(PROJECT_PATH)/main $(PROJECT_PATH)/../pluto
 endif
 export COMPONENT_DIRS
 

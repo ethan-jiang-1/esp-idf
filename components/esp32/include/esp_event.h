@@ -52,6 +52,16 @@ typedef enum {
     SYSTEM_EVENT_ETH_CONNECTED,            /**< ESP32 ethernet phy link up */
     SYSTEM_EVENT_ETH_DISCONNECTED,         /**< ESP32 ethernet phy link down */
     SYSTEM_EVENT_ETH_GOT_IP,               /**< ESP32 ethernet got IP from connected AP */
+    SYSTEM_EVENT_SPI_ETH_START,            /**< ESP32 spi ethernet start */
+    SYSTEM_EVENT_SPI_ETH_STOP,             /**< ESP32 spi ethernet stop */
+    SYSTEM_EVENT_SPI_ETH_CONNECTED,        /**< ESP32 spi ethernet phy link up */
+    SYSTEM_EVENT_SPI_ETH_DISCONNECTED,     /**< ESP32 spi ethernet phy link down */
+    SYSTEM_EVENT_SPI_ETH_GOT_IP,           /**< ESP32 spi ethernet got IP from connected AP */
+    SYSTEM_EVENT_TUN_START,            /**< ESP32 tun start */
+    SYSTEM_EVENT_TUN_STOP,             /**< ESP32 tun stop */
+    SYSTEM_EVENT_TUN_CONNECTED,        /**< ESP32 tun link up */
+    SYSTEM_EVENT_TUN_DISCONNECTED,     /**< ESP32 tun link down */
+    SYSTEM_EVENT_TUN_GOT_IP,           /**< ESP32 tun got IP */
     SYSTEM_EVENT_MAX
 } system_event_id_t;
 
@@ -179,6 +189,8 @@ void esp_event_set_default_eth_handlers();
   *
   */
 void esp_event_set_default_wifi_handlers();
+
+void esp_event_set_default_spi_eth_handlers();
 
 #ifdef __cplusplus
 }

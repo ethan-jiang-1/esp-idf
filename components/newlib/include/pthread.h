@@ -311,6 +311,7 @@ void 	_EXFUN(pthread_testcancel, (void));
 
 /* Establishing Cancellation Handlers, P1003.1c/Draft 10, p. 184 */
 
+#if 0
 void	_EXFUN(_pthread_cleanup_push,
 	(struct _pthread_cleanup_context *_context,
 	void (*_routine)(void *), void *_arg));
@@ -328,6 +329,7 @@ void	_EXFUN(_pthread_cleanup_pop,
 #define pthread_cleanup_pop(_execute) \
     _pthread_cleanup_pop(&_pthread_clup_ctx, (_execute)); \
   } while (0)
+#endif
 
 #if defined(_GNU_SOURCE)
 void	_EXFUN(_pthread_cleanup_push_defer,
@@ -429,3 +431,5 @@ int	_EXFUN(pthread_rwlock_timedwrlock,
 
 #endif
 /* end of include file */
+
+#include <pthread/_pthread.h>
