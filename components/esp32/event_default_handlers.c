@@ -69,6 +69,151 @@ static esp_err_t system_event_eth_got_ip_default(system_event_t *event);
 */
 static system_event_handler_t default_event_handlers[SYSTEM_EVENT_MAX] = { 0 };
 
+#ifdef CONFIG_LUA_RTOS_ETH_HW_TYPE_SPI
+static esp_err_t system_event_spi_eth_start_handle_default(system_event_t *event);
+static esp_err_t system_event_spi_eth_stop_handle_default(system_event_t *event);
+static esp_err_t system_event_spi_eth_connected_handle_default(system_event_t *event);
+static esp_err_t system_event_spi_eth_disconnected_handle_default(system_event_t *event);
+esp_err_t tcpip_adapter_spi_eth_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info);
+
+esp_err_t system_event_spi_eth_start_handle_default(system_event_t *event)
+{
+    tcpip_adapter_ip_info_t eth_ip;
+    uint8_t eth_mac[6] = {0x00,0x00,0x00,0x00,0x00,0x00};
+
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_SPI_ETH, &eth_ip);
+    tcpip_adapter_spi_eth_start(eth_mac, &eth_ip);
+
+    return ESP_OK;
+}
+
+esp_err_t system_event_spi_eth_stop_handle_default(system_event_t *event)
+{
+    tcpip_adapter_stop(TCPIP_ADAPTER_IF_SPI_ETH);
+
+    return ESP_OK;
+}
+
+esp_err_t system_event_spi_eth_connected_handle_default(system_event_t *event)
+{
+    tcpip_adapter_dhcp_status_t status;
+
+    tcpip_adapter_up(TCPIP_ADAPTER_IF_SPI_ETH);
+
+    tcpip_adapter_dhcpc_get_status(TCPIP_ADAPTER_IF_SPI_ETH, &status);
+
+    if (status == TCPIP_ADAPTER_DHCP_INIT) {
+        tcpip_adapter_dhcpc_start(TCPIP_ADAPTER_IF_SPI_ETH);
+    } else if (status == TCPIP_ADAPTER_DHCP_STOPPED) {
+        tcpip_adapter_ip_info_t eth_ip;
+
+        tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_SPI_ETH, &eth_ip);
+
+        if (!(ip4_addr_isany_val(eth_ip.ip) || ip4_addr_isany_val(eth_ip.netmask) || ip4_addr_isany_val(eth_ip.gw))) {
+            system_event_t evt;
+
+            //notify event
+            evt.event_id = SYSTEM_EVENT_SPI_ETH_GOT_IP;
+            memcpy(&evt.event_info.got_ip.ip_info, &eth_ip, sizeof(tcpip_adapter_ip_info_t));
+
+            esp_event_send(&evt);
+        } else {
+            ESP_LOGE(TAG, "invalid static ip");
+        }
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t system_event_spi_eth_disconnected_handle_default(system_event_t *event)
+{
+    tcpip_adapter_down(TCPIP_ADAPTER_IF_SPI_ETH);
+    return ESP_OK;
+}
+
+void esp_event_set_default_spi_eth_handlers()
+{
+     default_event_handlers[SYSTEM_EVENT_SPI_ETH_START]           = system_event_spi_eth_start_handle_default;
+     default_event_handlers[SYSTEM_EVENT_SPI_ETH_STOP]            = system_event_spi_eth_stop_handle_default;
+     default_event_handlers[SYSTEM_EVENT_SPI_ETH_CONNECTED]       = system_event_spi_eth_connected_handle_default;
+     default_event_handlers[SYSTEM_EVENT_SPI_ETH_DISCONNECTED]    = system_event_spi_eth_disconnected_handle_default;
+     default_event_handlers[SYSTEM_EVENT_SPI_ETH_GOT_IP]         = NULL;
+}
+
+#endif
+
+#ifdef CONFIG_LUA_RTOS_USE_OPENVPN
+static esp_err_t system_event_tun_start_handle_default(system_event_t *event);
+static esp_err_t system_event_tun_stop_handle_default(system_event_t *event);
+static esp_err_t system_event_tun_connected_handle_default(system_event_t *event);
+static esp_err_t system_event_tun_disconnected_handle_default(system_event_t *event);
+esp_err_t tcpip_adapter_tun_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info);
+
+esp_err_t system_event_tun_start_handle_default(system_event_t *event)
+{
+    tcpip_adapter_ip_info_t tun_ip;
+    uint8_t tun_mac[6] = {0x00,0x00,0x00,0x00,0x00,0x00};
+
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_TUN, &tun_ip);
+    tcpip_adapter_tun_start(tun_mac, &tun_ip);
+
+    return ESP_OK;
+}
+
+esp_err_t system_event_tun_stop_handle_default(system_event_t *event)
+{
+    tcpip_adapter_stop(TCPIP_ADAPTER_IF_TUN);
+
+    return ESP_OK;
+}
+
+esp_err_t system_event_tun_connected_handle_default(system_event_t *event)
+{
+    tcpip_adapter_dhcp_status_t status;
+
+    tcpip_adapter_up(TCPIP_ADAPTER_IF_TUN);
+
+    tcpip_adapter_dhcpc_get_status(TCPIP_ADAPTER_IF_TUN, &status);
+
+    if (status == TCPIP_ADAPTER_DHCP_INIT) {
+        tcpip_adapter_dhcpc_start(TCPIP_ADAPTER_IF_TUN);
+    } else if (status == TCPIP_ADAPTER_DHCP_STOPPED) {
+        tcpip_adapter_ip_info_t tun_ip;
+
+        tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_TUN, &tun_ip);
+
+        if (!(ip4_addr_isany_val(tun_ip.ip) || ip4_addr_isany_val(tun_ip.netmask) || ip4_addr_isany_val(tun_ip.gw))) {
+            system_event_t evt;
+
+            //notify event
+            evt.event_id = SYSTEM_EVENT_TUN_GOT_IP;
+            memcpy(&evt.event_info.got_ip.ip_info, &tun_ip, sizeof(tcpip_adapter_ip_info_t));
+
+            esp_event_send(&evt);
+        } else {
+            ESP_LOGE(TAG, "invalid static ip");
+        }
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t system_event_tun_disconnected_handle_default(system_event_t *event)
+{
+    tcpip_adapter_down(TCPIP_ADAPTER_IF_TUN);
+    return ESP_OK;
+}
+
+void esp_event_set_default_tun_handlers()
+{
+     default_event_handlers[SYSTEM_EVENT_TUN_START]           = system_event_tun_start_handle_default;
+     default_event_handlers[SYSTEM_EVENT_TUN_STOP]            = system_event_tun_stop_handle_default;
+     default_event_handlers[SYSTEM_EVENT_TUN_CONNECTED]       = system_event_tun_connected_handle_default;
+     default_event_handlers[SYSTEM_EVENT_TUN_DISCONNECTED]    = system_event_tun_disconnected_handle_default;
+     default_event_handlers[SYSTEM_EVENT_TUN_GOT_IP]         = NULL;
+}
+#endif
+
 esp_err_t system_event_eth_start_handle_default(system_event_t *event)
 {
     tcpip_adapter_ip_info_t eth_ip;

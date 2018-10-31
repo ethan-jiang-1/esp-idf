@@ -3104,7 +3104,7 @@ FRESULT follow_path (	/* FR_OK(0): successful, !=0: error code */
 			if (ns & NS_LAST) break;			/* Last segment matched. Function completed. */
 			/* Get into the sub-directory */
 			if (!(dp->obj.attr & AM_DIR)) {		/* It is not a sub-directory and cannot follow */
-				res = FR_NO_PATH; break;
+				res = FR_NO_DIR; break;
 			}
 #if FF_FS_EXFAT
 			if (fs->fs_type == FS_EXFAT) {		/* Save containing directory information for next dir */
@@ -4411,7 +4411,7 @@ FRESULT f_opendir (
 						dp->obj.sclust = ld_clust(fs, dp->dir);	/* Get object allocation info */
 					}
 				} else {						/* This object is a file */
-					res = FR_NO_PATH;
+					res = FR_NO_DIR;
 				}
 			}
 			if (res == FR_OK) {
@@ -4798,7 +4798,7 @@ FRESULT f_unlink (
 						res = dir_sdi(&sdj, 0);
 						if (res == FR_OK) {
 							res = dir_read_file(&sdj);			/* Test if the directory is empty */
-							if (res == FR_OK) res = FR_DENIED;	/* Not empty? */
+							if (res == FR_OK) res = FR_NOT_EMPTY;	/* Not empty? */
 							if (res == FR_NO_FILE) res = FR_OK;	/* Empty? */
 						}
 					}
@@ -4928,7 +4928,8 @@ FRESULT f_rename (
 	BYTE buf[FF_FS_EXFAT ? SZDIRE * 2 : SZDIRE], *dir;
 	DWORD dw;
 	DEF_NAMBUF
-
+	BYTE old_is_dir = 0;
+	BYTE new_is_dir = 1;
 
 	get_ldnumber(&path_new);						/* Snip the drive number of new name off */
 	res = find_volume(&path_old, &fs, FA_WRITE);	/* Get logical drive of the old object */
@@ -4936,6 +4937,7 @@ FRESULT f_rename (
 		djo.obj.fs = fs;
 		INIT_NAMBUF(fs);
 		res = follow_path(&djo, path_old);		/* Check old object */
+		old_is_dir = ((res == FR_OK) && (djo.obj.attr & AM_DIR));
 		if (res == FR_OK && (djo.fn[NSFLAG] & (NS_DOT | NS_NONAME))) res = FR_INVALID_NAME;	/* Check validity of name */
 #if FF_FS_LOCK != 0
 		if (res == FR_OK) {
@@ -4951,6 +4953,62 @@ FRESULT f_rename (
 				mem_cpy(buf, fs->dirbuf, SZDIRE * 2);	/* Save 85+C0 entry of old object */
 				mem_cpy(&djn, &djo, sizeof djo);
 				res = follow_path(&djn, path_new);		/* Make sure if new object name is not in use */
+
+	            new_is_dir = ((res == FR_OK) && (djn.obj.attr & AM_DIR));
+
+	            if (new_is_dir && !old_is_dir) {
+	                res = FR_IS_DIR;
+	                LEAVE_FF(fs, res);
+	            }
+
+	            if (new_is_dir) {
+	               DWORD dclst = 0;
+	               FF_DIR djc;
+
+	               mem_cpy(&djc, &djn, sizeof(FF_DIR));
+
+	#if FF_FS_EXFAT
+	               FFOBJID obj;
+
+	                obj.fs = fs;
+	                if (fs->fs_type == FS_EXFAT) {
+	                    init_alloc_info(fs, &obj);
+	                    dclst = obj.sclust;
+	                } else
+	#endif
+	                {
+	                    dclst = ld_clust(fs, djc.dir);
+	                }
+	#if FF_FS_RPATH != 0
+	                if (dclst != fs->cdir)
+	#endif
+	                {
+	                    djc.obj.fs = fs;                /* Open the sub-directory */
+	                    djc.obj.sclust = dclst;
+	#if FF_FS_EXFAT
+	                    if (fs->fs_type == FS_EXFAT) {
+	                        djc.obj.objsize = obj.objsize;
+	                        djc.obj.stat = obj.stat;
+	                    }
+	#endif
+	                    res = dir_sdi(&djc, 0);
+	                    if (res == FR_OK) {
+	                        res = dir_read_file(&djc);          /* Test if the directory is empty */
+	                        if (res == FR_OK) {
+	                            res = FR_NOT_EMPTY;
+	                            LEAVE_FF(fs, res);
+	                        }
+	                    }
+	                }
+
+	                res = dir_remove(&djn);
+	                if (res == FR_OK) {
+	                    res = sync_fs(fs);
+	                }
+
+	                res = FR_NO_FILE;
+	            }
+
 				if (res == FR_OK) {						/* Is new name already in use by any other object? */
 					res = (djn.obj.sclust == djo.obj.sclust && djn.dptr == djo.dptr) ? FR_NO_FILE : FR_EXIST;
 				}
@@ -4973,6 +5031,61 @@ FRESULT f_rename (
 				mem_cpy(buf, djo.dir, SZDIRE);			/* Save directory entry of the object */
 				mem_cpy(&djn, &djo, sizeof (FF_DIR));		/* Duplicate the directory object */
 				res = follow_path(&djn, path_new);		/* Make sure if new object name is not in use */
+	             new_is_dir = ((res == FR_OK) && (djn.obj.attr & AM_DIR));
+
+	             if (new_is_dir && !old_is_dir) {
+	                res = FR_IS_DIR;
+	                LEAVE_FF(fs, res);
+	             }
+
+	                if (new_is_dir) {
+	                   DWORD dclst = 0;
+	                   FF_DIR djc;
+
+	                   mem_cpy(&djc, &djn, sizeof(FF_DIR));
+
+	#if FF_FS_EXFAT
+	                   FFOBJID obj;
+
+	                 obj.fs = fs;
+	                 if (fs->fs_type == FS_EXFAT) {
+	                     init_alloc_info(fs, &obj);
+	                     dclst = obj.sclust;
+	                 } else
+	#endif
+	                 {
+	                     dclst = ld_clust(fs, djc.dir);
+	                 }
+	#if FF_FS_RPATH != 0
+	                 if (dclst != fs->cdir)
+	#endif
+	                 {
+	                     djc.obj.fs = fs;                /* Open the sub-directory */
+	                     djc.obj.sclust = dclst;
+	#if FF_FS_EXFAT
+	                     if (fs->fs_type == FS_EXFAT) {
+	                         djc.obj.objsize = obj.objsize;
+	                         djc.obj.stat = obj.stat;
+	                     }
+	#endif
+	                     res = dir_sdi(&djc, 0);
+	                     if (res == FR_OK) {
+	                         res = dir_read_file(&djc);          /* Test if the directory is empty */
+	                         if (res == FR_OK) {
+	                             res = FR_NOT_EMPTY;
+	                             LEAVE_FF(fs, res);
+	                         }
+	                     }
+	                 }
+
+	                 res = dir_remove(&djn);
+	                 if (res == FR_OK) {
+	                     res = sync_fs(fs);
+	                 }
+
+	                 res = FR_NO_FILE;
+	             }
+
 				if (res == FR_OK) {						/* Is new name already in use by any other object? */
 					res = (djn.obj.sclust == djo.obj.sclust && djn.dptr == djo.dptr) ? FR_NO_FILE : FR_EXIST;
 				}

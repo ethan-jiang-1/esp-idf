@@ -817,7 +817,7 @@ rmt_tx_end_callback_t rmt_register_tx_end_callback(rmt_tx_end_fn_t function, voi
  *--------------------------END OF EXAMPLE --------------------------
  */
 
-
+esp_err_t rmt_config_one(const rmt_config_t* rmt_param, uint8_t *chan);
 
 #ifdef __cplusplus
 }

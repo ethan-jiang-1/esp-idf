@@ -513,4 +513,11 @@ int	_EXFUN(unlinkat, (int, const char *, int));
 #ifdef __cplusplus
 }
 #endif
+
+// Lua RTOS additions
+int gethostname(char *name, size_t len);
+int sethostname(const char *name, size_t len);
+char *crypt(const char *passwd, const char *salt);
+int ftruncate(int fd, off_t length);
+
 #endif /* _SYS_UNISTD_H */

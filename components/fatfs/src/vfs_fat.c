@@ -24,6 +24,8 @@
 #include "ff.h"
 #include "diskio.h"
 
+#include <sys/vfs/vfs.h>
+
 typedef struct {
     char fat_drive[8];  /* FAT drive name */
     char base_path[ESP_VFS_PATH_MAX];   /* base path in VFS where partition is registered */
@@ -35,14 +37,6 @@ typedef struct {
     bool *o_append;  /* O_APPEND is stored here for each max_files entries (because O_APPEND is not compatible with FA_OPEN_APPEND) */
     FIL files[0];   /* array with max_files entries; must be the final member of the structure */
 } vfs_fat_ctx_t;
-
-typedef struct {
-    DIR dir;
-    long offset;
-    FF_DIR ffdir;
-    FILINFO filinfo;
-    struct dirent cur_dirent;
-} vfs_fat_dir_t;
 
 /* Date and time storage formats in FAT */
 typedef union {
@@ -267,6 +261,9 @@ static int fresult_to_errno(FRESULT fr)
         case FR_NOT_ENOUGH_CORE: return ENOMEM;
         case FR_TOO_MANY_OPEN_FILES: return ENFILE;
         case FR_INVALID_PARAMETER: return EINVAL;
+        case FR_NO_DIR: return ENOTDIR;
+        case FR_NOT_EMPTY: return ENOTEMPTY;
+        case FR_IS_DIR: return EISDIR;
         case FR_OK: return 0;
     }
     assert(0 && "unhandled FRESULT");
@@ -484,7 +481,7 @@ static int vfs_fat_stat(void* ctx, const char * path, struct stat * st)
         .tm_hour = ftime.hour
     };
     st->st_mtime = mktime(&tm);
-    st->st_atime = 0;
+    st->st_atime = mktime(&tm);
     st->st_ctime = 0;
     return 0;
 }
@@ -494,7 +491,26 @@ static int vfs_fat_unlink(void* ctx, const char *path)
     vfs_fat_ctx_t* fat_ctx = (vfs_fat_ctx_t*) ctx;
     _lock_acquire(&fat_ctx->lock);
     prepend_drive_to_path(fat_ctx, &path, NULL);
-    FRESULT res = f_unlink(path);
+
+    FRESULT res;
+    FILINFO fno;
+
+    // Sanity check: it is not a directory
+    res = f_stat(path, &fno);
+    if (res != FR_OK) {
+        _lock_release(&fat_ctx->lock);
+        ESP_LOGD(TAG, "%s: fresult=%d", __func__, res);
+        errno = fresult_to_errno(res);
+        return -1;
+    }
+
+    if (fno.fattrib & AM_DIR) {
+        _lock_release(&fat_ctx->lock);
+        errno = EPERM;
+        return -1;
+    }
+
+    res = f_unlink(path);
     _lock_release(&fat_ctx->lock);
     if (res != FR_OK) {
         ESP_LOGD(TAG, "%s: fresult=%d", __func__, res);
@@ -590,17 +606,19 @@ static DIR* vfs_fat_opendir(void* ctx, const char* name)
 {
     vfs_fat_ctx_t* fat_ctx = (vfs_fat_ctx_t*) ctx;
     _lock_acquire(&fat_ctx->lock);
-    prepend_drive_to_path(fat_ctx, &name, NULL);
-    vfs_fat_dir_t* fat_dir = calloc(1, sizeof(vfs_fat_dir_t));
+
+    vfs_dir_t *fat_dir = vfs_allocate_dir("fat", name);
     if (!fat_dir) {
         _lock_release(&fat_ctx->lock);
-        errno = ENOMEM;
         return NULL;
     }
-    FRESULT res = f_opendir(&fat_dir->ffdir, name);
+
+    prepend_drive_to_path(fat_ctx, &name, NULL);
+
+    FRESULT res = f_opendir((FF_DIR *)fat_dir->fs_dir, name);
     _lock_release(&fat_ctx->lock);
     if (res != FR_OK) {
-        free(fat_dir);
+        vfs_free_dir(fat_dir);
         ESP_LOGD(TAG, "%s: fresult=%d", __func__, res);
         errno = fresult_to_errno(res);
         return NULL;
@@ -611,9 +629,9 @@ static DIR* vfs_fat_opendir(void* ctx, const char* name)
 static int vfs_fat_closedir(void* ctx, DIR* pdir)
 {
     assert(pdir);
-    vfs_fat_dir_t* fat_dir = (vfs_fat_dir_t*) pdir;
-    FRESULT res = f_closedir(&fat_dir->ffdir);
-    free(pdir);
+    vfs_dir_t* fat_dir = (vfs_dir_t*) pdir;
+    FRESULT res = f_closedir((FF_DIR *)fat_dir->fs_dir);
+    vfs_free_dir(fat_dir);
     if (res != FR_OK) {
         ESP_LOGD(TAG, "%s: fresult=%d", __func__, res);
         errno = fresult_to_errno(res);
@@ -624,13 +642,23 @@ static int vfs_fat_closedir(void* ctx, DIR* pdir)
 
 static struct dirent* vfs_fat_readdir(void* ctx, DIR* pdir)
 {
-    vfs_fat_dir_t* fat_dir = (vfs_fat_dir_t*) pdir;
+    vfs_dir_t* fat_dir = (vfs_dir_t*) pdir;
     struct dirent* out_dirent;
-    int err = vfs_fat_readdir_r(ctx, pdir, &fat_dir->cur_dirent, &out_dirent);
+
+    // If there are mount points to read, read them first
+    if (fat_dir->mount) {
+        struct dirent *ment = mount_readdir((DIR *)pdir);
+        if (ment) {
+            return ment;
+        }
+    }
+
+    int err = vfs_fat_readdir_r(ctx, pdir, &fat_dir->ent, &out_dirent);
     if (err != 0) {
         errno = err;
         return NULL;
     }
+
     return out_dirent;
 }
 
@@ -638,25 +666,37 @@ static int vfs_fat_readdir_r(void* ctx, DIR* pdir,
         struct dirent* entry, struct dirent** out_dirent)
 {
     assert(pdir);
-    vfs_fat_dir_t* fat_dir = (vfs_fat_dir_t*) pdir;
-    FRESULT res = f_readdir(&fat_dir->ffdir, &fat_dir->filinfo);
+    vfs_dir_t* fat_dir = (vfs_dir_t*) pdir;
+
+    // If there are mount points to read, read them first
+    if (fat_dir->mount) {
+        struct dirent *ment = mount_readdir((DIR *)pdir);
+        if (ment) {
+            *out_dirent = ment;
+            return 0;
+        }
+    }
+
+    FRESULT res = f_readdir((FF_DIR *)fat_dir->fs_dir, (FILINFO *)fat_dir->fs_info);
     if (res != FR_OK) {
         *out_dirent = NULL;
         ESP_LOGD(TAG, "%s: fresult=%d", __func__, res);
         return fresult_to_errno(res);
     }
-    if (fat_dir->filinfo.fname[0] == 0) {
+    if (((FILINFO *)fat_dir->fs_info)->fname[0] == 0) {
         // end of directory
         *out_dirent = NULL;
         return 0;
     }
     entry->d_ino = 0;
-    if (fat_dir->filinfo.fattrib & AM_DIR) {
+    if (((FILINFO *)fat_dir->fs_info)->fattrib & AM_DIR) {
         entry->d_type = DT_DIR;
+        entry->d_fsize = 0;
     } else {
         entry->d_type = DT_REG;
+        entry->d_fsize = ((FILINFO *)fat_dir->fs_info)->fsize;
     }
-    strlcpy(entry->d_name, fat_dir->filinfo.fname,
+    strlcpy(entry->d_name, ((FILINFO *)fat_dir->fs_info)->fname,
             sizeof(entry->d_name));
     fat_dir->offset++;
     *out_dirent = entry;
@@ -666,17 +706,17 @@ static int vfs_fat_readdir_r(void* ctx, DIR* pdir,
 static long vfs_fat_telldir(void* ctx, DIR* pdir)
 {
     assert(pdir);
-    vfs_fat_dir_t* fat_dir = (vfs_fat_dir_t*) pdir;
+    vfs_dir_t* fat_dir = (vfs_dir_t*) pdir;
     return fat_dir->offset;
 }
 
 static void vfs_fat_seekdir(void* ctx, DIR* pdir, long offset)
 {
     assert(pdir);
-    vfs_fat_dir_t* fat_dir = (vfs_fat_dir_t*) pdir;
+    vfs_dir_t* fat_dir = (vfs_dir_t*) pdir;
     FRESULT res;
     if (offset < fat_dir->offset) {
-        res = f_rewinddir(&fat_dir->ffdir);
+        res = f_rewinddir((FF_DIR *)fat_dir->fs_dir);
         if (res != FR_OK) {
             ESP_LOGD(TAG, "%s: rewinddir fresult=%d", __func__, res);
             errno = fresult_to_errno(res);
@@ -685,7 +725,7 @@ static void vfs_fat_seekdir(void* ctx, DIR* pdir, long offset)
         fat_dir->offset = 0;
     }
     while (fat_dir->offset < offset) {
-        res = f_readdir(&fat_dir->ffdir, &fat_dir->filinfo);
+        res = f_readdir((FF_DIR *)fat_dir->fs_dir, (FILINFO *)fat_dir->fs_info);
         if (res != FR_OK) {
             ESP_LOGD(TAG, "%s: f_readdir fresult=%d", __func__, res);
             errno = fresult_to_errno(res);
@@ -715,8 +755,34 @@ static int vfs_fat_rmdir(void* ctx, const char* name)
 {
     vfs_fat_ctx_t* fat_ctx = (vfs_fat_ctx_t*) ctx;
     _lock_acquire(&fat_ctx->lock);
+
+    if (strcmp(name,"/") == 0) {
+        _lock_release(&fat_ctx->lock);
+        errno = EBUSY;
+        return -1;
+    }
+
     prepend_drive_to_path(fat_ctx, &name, NULL);
-    FRESULT res = f_unlink(name);
+
+    FRESULT res;
+    FILINFO fno;
+
+    // Sanity check: it is a directory
+    res = f_stat(name, &fno);
+    if (res != FR_OK) {
+        _lock_release(&fat_ctx->lock);
+        ESP_LOGD(TAG, "%s: fresult=%d", __func__, res);
+        errno = fresult_to_errno(res);
+        return -1;
+    }
+
+    if (!(fno.fattrib & AM_DIR)) {
+        _lock_release(&fat_ctx->lock);
+        errno = ENOTDIR;
+        return -1;
+    }
+
+    res = f_unlink(name);
     _lock_release(&fat_ctx->lock);
     if (res != FR_OK) {
         ESP_LOGD(TAG, "%s: fresult=%d", __func__, res);

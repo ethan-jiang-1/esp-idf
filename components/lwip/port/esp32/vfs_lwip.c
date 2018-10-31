@@ -64,6 +64,8 @@ void esp_vfs_lwip_sockets_register()
         .socket_select = &lwip_select,
         .stop_socket_select = &lwip_stop_socket_select,
         .stop_socket_select_isr = &lwip_stop_socket_select_isr,
+        .writev = &lwip_writev,
+        .select = &lwip_select,
     };
     /* Non-LWIP file descriptors are from 0 to (LWIP_SOCKET_OFFSET-1). LWIP
      * file descriptors are registered from LWIP_SOCKET_OFFSET to

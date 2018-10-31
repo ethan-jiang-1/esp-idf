@@ -283,6 +283,9 @@ int _EXFUN(clock_getenable_attr, (clockid_t clock_id, int *attr));
 
 #endif /* _POSIX_CPUTIME or _POSIX_THREAD_CPUTIME */
 
+// Functions implemented in Lua RTOS
+int nanosleep(const struct timespec *req, struct timespec *rem);
+
 #ifdef __cplusplus
 }
 #endif

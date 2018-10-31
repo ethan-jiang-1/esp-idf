@@ -296,6 +296,8 @@ typedef long suseconds_t;
  */
 #if defined(_POSIX_THREADS) && !defined(__CYGWIN__)
 
+typedef int cpu_set_t;
+
 #include <sys/sched.h>
 
 /*
@@ -354,7 +356,8 @@ typedef struct {
 #if defined(_POSIX_THREAD_CPUTIME)
   int  cputime_clock_allowed;  /* see time.h */
 #endif
-  int  detachstate;
+  int detachstate;
+  void (*init_func)(void *);
 #if defined(__rtems__)
   size_t affinitysetsize;
   cpu_set_t *affinityset;

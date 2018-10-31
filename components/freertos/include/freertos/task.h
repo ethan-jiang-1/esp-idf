@@ -816,6 +816,8 @@ void vTaskDelete( TaskHandle_t xTaskToDelete ) PRIVILEGED_FUNCTION;
  */
 void vTaskDelay( const TickType_t xTicksToDelay ) PRIVILEGED_FUNCTION;
 
+BaseType_t xTaskAbortDelay( TaskHandle_t xTask );
+
 /**
  * Delay a task until a specified time.
  *
